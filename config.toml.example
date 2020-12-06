@@ -1,0 +1,5 @@
+channel_id = '<The Main Channel where everything should go>'
+discord_token = '<Your Discord Token>'
+
+server_executable = '<**ABSOLUTE PATH TO YOUR ZEROMOD EXECUTABLE**>'
+server_cwd = '<**ZEROMOD WORKING DIRECTORY**>'
