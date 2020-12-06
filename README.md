@@ -19,7 +19,7 @@ yarn install
 node index.js
 ```
 
-You can also use `npm` in place of `yarn` if you don't want to install `npm` like:
+You can also use `npm` in place of `yarn` if you don't want to install `yarn` like:
 
 `npm install`
 
