@@ -29,11 +29,24 @@ class DiscordBot {
   }
 
   onDiscMessage = (msg) => {
-  }
+    if (msg.channel.id !== this.config.channel_id || msg.author.id === this.Bot.user.id) {
+      return
+    }
 
-  sendToChannel (...args) {
-    console.log('Sending:', args)
-    this.channel.send(...args)
+    // Translate to s_talkbot_say and get it over with
+    const lines = msg.cleanContent.split('\n')
+    for (const line of lines) {
+      const generatedMsg = `s_talkbot_say "" "[${msg.author.username}]:" "${line}"\n`
+      process.stdout.write(generatedMsg)
+      this.server_process.stdin.write(generatedMsg)
+    }
+
+    for (const it of msg.attachments) {
+      const attachment = it[1]
+      const generatedMsg = `s_talkbot_say "" "[${msg.author.username}]:" "${attachment.url}"\n`
+      process.stdout.write(generatedMsg)
+      this.server_process.stdin.write(generatedMsg)
+    }
   }
 
   // ClientID -> location
@@ -50,7 +63,7 @@ class DiscordBot {
     // most likely comes first
     match = REGEXES.CHAT_EVENT.exec(msg)
     if (match) {
-      await this.sendToChannel(`**${match.groups.author}**: ${match.groups.message}`)
+      await this.channel.send(`**${match.groups.author}**: ${match.groups.message}`)
       REGEXES.CHAT_EVENT.lastIndex = 0
       return
     }
@@ -59,7 +72,7 @@ class DiscordBot {
     match = REGEXES.NETWORK_EVENT.exec(msg)
     if (match) {
       const geoloc = this.GEOIP_MAP.get(match.groups.clientid)
-      await this.sendToChannel(`**${match.groups.name} (${match.groups.clientid})** ${match.groups.action} ${geoloc ? 'from ' + geoloc : ''}`)
+      await this.channel.send(`**${match.groups.name} (${match.groups.clientid})** ${match.groups.action} ${geoloc ? 'from ' + geoloc : ''}`)
       if (geoloc) {
         this.GEOIP_MAP.delete(match.groups.clientid)
       }
@@ -77,7 +90,7 @@ class DiscordBot {
 
     match = REGEXES.MASTER_EVENT.exec(msg)
     if (match) {
-      await this.sendToChannel(`**${match.groups.name}** has ${match.groups.op} ${match.groups.privilege}`)
+      await this.channel.send(`**${match.groups.name}** has ${match.groups.op} ${match.groups.privilege}`)
       REGEXES.MASTER_EVENT.lastIndex = 0
       return
     }
@@ -85,7 +98,7 @@ class DiscordBot {
     // TODO also cover ban
     match = REGEXES.KICK_EVENT.exec(msg)
     if (match) {
-      await this.sendToChannel(`**${match.groups.client1}** has kicked **${match.groups.client2}**!`)
+      await this.channel.send(`**${match.groups.client1}** has kicked **${match.groups.client2}**!`)
       REGEXES.KICK_EVENT.lastIndex = 0
     }
   }
@@ -143,11 +156,11 @@ class DiscordBot {
     // good ol' crossover
     this.rlInterface = rl.createInterface({
       input: this.server_process.stdout,
-      output: this.server_process.stdin,
+      output: null,
       terminal: false
     })
 
-    this.rlInterface.on('line', this.onZMDMessage)
+    this.rlInterface.on('line', this.onZMDMessageWrapper)
     process.stdin.on('data', (data) => {
       this.server_process.stdin.write(data)
     })
