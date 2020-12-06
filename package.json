@@ -5,6 +5,9 @@
   "author": "Anonymous",
   "license": "GPL-3.0-or-later",
   "private": false,
+  "scripts": {
+    "dev": "node --inspect=localhost:9219 index.js"
+  },
   "dependencies": {
     "discord.js": "^12.5.1",
     "fs-jetpack": "^4.1.0",
