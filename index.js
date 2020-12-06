@@ -43,7 +43,7 @@ class DiscordBot {
 
     for (const it of msg.attachments) {
       const attachment = it[1]
-      const generatedMsg = `s_talkbot_say "" "[${msg.author.username}]:" "${attachment.url}"\n`
+      const generatedMsg = `s_talkbot_say "" "[${msg.author.username}]:" "has uploaded the file ${attachment.name}: ${attachment.url}"\n`
       process.stdout.write(generatedMsg)
       this.server_process.stdin.write(generatedMsg)
     }
