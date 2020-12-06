@@ -15,10 +15,13 @@ A better zeromod to discord integration, written in Node.js.
 ```shell
 cp config.toml.example config.toml
 $EDITOR config.toml
-npm install
+yarn install
 node index.js
 ```
 
+You can also use `npm` in place of `yarn` if you don't want to install `npm` like:
+
+`npm install`
 
 ## TODO
 
