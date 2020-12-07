@@ -31,7 +31,11 @@ const REGEXES = {
   MASTER_EVENT: /^master: (?<name>.+) (?<op>claimed|relinquished) (?<privilege>.+)$/g,
   GEOIP_EVENT: /^geoip: client (?<clientid>\d+) connected from (?<location>.+)$/g,
   KICK_EVENT: /^kick: (?<client1>.+) kicked (?<client2>.+)$/g,
-  CHAT_EVENT: /^chat: (?<author>.+): (?<message>.+)$/g
+  CHAT_EVENT: /^chat: (?<author>.+): (?<message>.+)$/g,
+  // eslint-disable-next-line no-useless-escape
+  DISCORD_DIRTY_TEXT_REGEX: /[.\[\]"'\\]/gi,
+  // REMOVE_SLASH_REGEX: /\//gi
+  SAUER_DIRTY_TEXT_REGEX: /["^]/gi
 }
 
 class DiscordBot {
@@ -60,6 +64,10 @@ class DiscordBot {
     })
   }
 
+  escapeWithSlash (match) {
+    return '\\' + match
+  }
+
   onDiscMessage = async (msg) => {
     if (msg.channel.id !== this.config.channel_id || msg.author.id === this.Bot.user.id) {
       return
@@ -67,15 +75,26 @@ class DiscordBot {
 
     // Translate to s_talkbot_say and get it over with
     const lines = msg.cleanContent.split('\n')
+    const username = msg.author.username
+    let cmdData = ''
+
+    // TODO make it safer?
+    if (username.indexOf(' ') === -1) {
+      cmdData = `s_talkbot_fakesay 0 "${username}" `
+    } else {
+      cmdData = `s_talkbot_say "" "[${username}]:" `
+    }
+
     for (const line of lines) {
-      const generatedMsg = `s_talkbot_say "" "[${msg.author.username}]:" "${line}"\n`
+      const generatedMsg = cmdData + '"' + line.replace(REGEXES.SAUER_DIRTY_TEXT_REGEX, this.escapeWithSlash) + '"\n'
+      REGEXES.SAUER_DIRTY_TEXT_REGEX.lastIndex = 0
       await this.writeToStdout(generatedMsg)
       await this.writeToSP(generatedMsg)
     }
 
     for (const it of msg.attachments) {
       const attachment = it[1]
-      const generatedMsg = `s_talkbot_say "" "[${msg.author.username}]:" "has uploaded the file ${attachment.name}: ${attachment.url}"\n`
+      const generatedMsg = cmdData + `"has uploaded the file ${attachment.name}: ${attachment.url}"\n`
       await this.writeToStdout(generatedMsg)
       await this.writeToSP(generatedMsg)
     }
@@ -95,7 +114,10 @@ class DiscordBot {
     // most likely comes first
     match = REGEXES.CHAT_EVENT.exec(msg)
     if (match) {
-      await this.channel.send(`**${match.groups.author}**: ${match.groups.message}`)
+      const cleanedText = match.groups.message.replace(REGEXES.DISCORD_DIRTY_TEXT_REGEX, this.escapeWithSlash)
+      REGEXES.DISCORD_DIRTY_TEXT_REGEX.lastIndex = 0
+
+      await this.channel.send(`**${match.groups.author}**: ${cleanedText}`)
       REGEXES.CHAT_EVENT.lastIndex = 0
       return
     }
