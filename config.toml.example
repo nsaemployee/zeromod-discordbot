@@ -3,3 +3,8 @@ discord_token = '<Your Discord Token>'
 
 server_executable = '<**ABSOLUTE PATH TO YOUR ZEROMOD EXECUTABLE**>'
 server_cwd = '<**ZEROMOD WORKING DIRECTORY**>'
+
+# You don't need to change this if you want zeromod to be spawned as a subprocess
+fifomode = false
+stdin_fifo = '<if FIFO mode is enabled, what is the path to the stdin FIFO?>'
+stdout_fifo = '<if FIFO mode is enabled, what is the path to the stdout FIFO?>'

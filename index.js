@@ -23,6 +23,8 @@ const toml = require('toml')
 
 const cp = require('child_process')
 const rl = require('readline')
+const { promisify } = require('util')
+const nfs = require('fs')
 
 const REGEXES = {
   NETWORK_EVENT: /^(?<op>connect|disconnect): (?<name>.+) \((?<clientid>\d+)\) (?<action>left|joined)$/g,
@@ -46,7 +48,19 @@ class DiscordBot {
     this.channel = await this.Bot.channels.fetch(this.config.channel_id)
   }
 
-  onDiscMessage = (msg) => {
+  writeToSP (data) {
+    return new Promise(resolve => {
+      return this.server_process.stdin.write(data, resolve)
+    })
+  }
+
+  writeToStdout (data) {
+    return new Promise(resolve => {
+      return process.stdout.write(data, resolve)
+    })
+  }
+
+  onDiscMessage = async (msg) => {
     if (msg.channel.id !== this.config.channel_id || msg.author.id === this.Bot.user.id) {
       return
     }
@@ -55,15 +69,15 @@ class DiscordBot {
     const lines = msg.cleanContent.split('\n')
     for (const line of lines) {
       const generatedMsg = `s_talkbot_say "" "[${msg.author.username}]:" "${line}"\n`
-      process.stdout.write(generatedMsg)
-      this.server_process.stdin.write(generatedMsg)
+      await this.writeToStdout(generatedMsg)
+      await this.writeToSP(generatedMsg)
     }
 
     for (const it of msg.attachments) {
       const attachment = it[1]
       const generatedMsg = `s_talkbot_say "" "[${msg.author.username}]:" "has uploaded the file ${attachment.name}: ${attachment.url}"\n`
-      process.stdout.write(generatedMsg)
-      this.server_process.stdin.write(generatedMsg)
+      await this.writeToStdout(generatedMsg)
+      await this.writeToSP(generatedMsg)
     }
   }
 
@@ -71,7 +85,7 @@ class DiscordBot {
   // only used during GEOIP_EVENT before NETWORK_EVENT
   GEOIP_MAP = new Map()
   onZMDMessage = async (msg) => {
-    process.stdout.write(msg + '\n')
+    await this.writeToStdout(msg + '\n')
     if (!this.channel) {
       return
       // wait till it logs in
@@ -149,28 +163,55 @@ class DiscordBot {
       process.exit(1)
     }
 
-    const isServerArgsInvalid = !_.isUndefined(this.config.server_args) ? !_.isArray(this.config.server_args) : false
-    if (!_.isString(this.config.server_executable) || isServerArgsInvalid) {
-      console.error('Either 1. server_executable is not a string (see the config), 2. server_args is defined and is not an array (also must be of strings)')
-      console.error('Cannot proceed, exiting.')
-      process.exit(2)
-    }
-
     if (!_.isString(this.config.channel_id)) {
       console.error('Channel ID not specified in config, exiting.')
       process.exit(3)
     }
+
+    // Setup some hooks
+    process.stdin.on('data', (data) => {
+      console.log('Data:', data)
+      this.writeToStdout(data)
+    })
+
+    process.on('SIGINT', this.goodbye)
+    process.on('SIGTERM', this.goodbye)
 
     this.Bot = new Discord.Client()
     this.Bot.on('ready', this.onReady)
     this.Bot.on('message', this.onDiscMessage)
     await this.Bot.login(this.config.discord_token)
 
-    // Open the server as a subprocess
-    this.server_process = cp.spawn(this.config.server_executable, this.config.server_args, {
-      cwd: this.config.server_cwd || undefined,
-      stdio: 'pipe'
-    })
+    if (this.config.fifomode === true) {
+      const openAsync = promisify(nfs.open)
+      try {
+        this.server_process = {
+          stdin: await openAsync(this.config.stdin_fifo, 'r'),
+          stdout: await openAsync(this.config.stdout_fifo, 'a'),
+
+          kill () {},
+          on (_, fn) {
+            fn()
+          }
+        }
+      } catch (e) {
+        console.error('Caught:', e)
+        process.exit(4)
+      }
+    } else {
+      const isServerArgsInvalid = !_.isUndefined(this.config.server_args) ? !_.isArray(this.config.server_args) : false
+      if (!_.isString(this.config.server_executable) || isServerArgsInvalid) {
+        console.error('Either 1. server_executable is not a string (see the config), 2. server_args is defined and is not an array (also must be of strings)')
+        console.error('Cannot proceed, exiting.')
+        process.exit(2)
+      }
+
+      // Open the server as a subprocess
+      this.server_process = cp.spawn(this.config.server_executable, this.config.server_args, {
+        cwd: this.config.server_cwd || undefined,
+        stdio: 'pipe'
+      })
+    }
     // good ol' crossover
     this.rlInterface = rl.createInterface({
       input: this.server_process.stdout,
@@ -179,12 +220,6 @@ class DiscordBot {
     })
 
     this.rlInterface.on('line', this.onZMDMessageWrapper)
-    process.stdin.on('data', (data) => {
-      this.server_process.stdin.write(data)
-    })
-
-    process.on('SIGINT', this.goodbye)
-    process.on('SIGTERM', this.goodbye)
   }
 }
 
