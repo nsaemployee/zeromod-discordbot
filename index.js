@@ -29,7 +29,12 @@ const REGEXES = {
   MASTER_EVENT: /^master: (?<name>.+) (?<op>claimed|relinquished) (?<privilege>.+)$/g,
   GEOIP_EVENT: /^geoip: client (?<clientid>\d+) connected from (?<location>.+)$/g,
   KICK_EVENT: /^kick: (?<client1>.+) kicked (?<client2>.+)$/g,
-  CHAT_EVENT: /^chat: (?<author>.+): (?<message>.+)$/g
+  CHAT_EVENT: /^chat: (?<author>.+): (?<message>.+)$/g,
+  // eslint-disable-next-line no-useless-escape
+  DIRTY_TEXT_REGEX: /[.\[\]"'\\]/gi,
+  // REMOVE_SLASH_REGEX: /\//gi
+  REMOVE_APOSTROPHE_PATTERN: '"',
+  REMOVE_APOSTROPHE_REPLACEMENT: '\\"'
 }
 
 class DiscordBot {
@@ -66,7 +71,8 @@ class DiscordBot {
     // Translate to s_talkbot_say and get it over with
     const lines = msg.cleanContent.split('\n')
     for (const line of lines) {
-      const generatedMsg = `s_talkbot_say "" "[${msg.author.username}]:" "${line}"\n`
+      const generatedMsg = `s_talkbot_say "" "[${msg.author.username}]:" "${line.replace(REGEXES.REMOVE_APOSTROPHE_PATTERN, REGEXES.REMOVE_APOSTROPHE_REPLACEMENT)}"\n`
+      REGEXES.DIRTY_TEXT_REGEX.lastIndex = 0
       await this.writeToStdout(generatedMsg)
       await this.writeToSP(generatedMsg)
     }
@@ -93,7 +99,10 @@ class DiscordBot {
     // most likely comes first
     match = REGEXES.CHAT_EVENT.exec(msg)
     if (match) {
-      await this.channel.send(`**${match.groups.author}**: ${match.groups.message}`)
+      const cleanedText = match.groups.message.replaceAll(REGEXES.DIRTY_TEXT_REGEX, match => { return '\\' + match })
+      REGEXES.DIRTY_TEXT_REGEX.lastIndex = 0
+
+      await this.channel.send(`**${match.groups.author}**: ${cleanedText}`)
       REGEXES.CHAT_EVENT.lastIndex = 0
       return
     }
