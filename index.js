@@ -80,7 +80,7 @@ class DiscordBot {
       username = '?!?!?'
     }
 
-    const cmdData = `s_talkbot_fakesay 0 "${username.replace(/\s/g, '_')}" `
+    const cmdData = `s_talkbot_fakesay 0 " " "[${username}]" `
 
     // TODO make it safer?
     /*
