@@ -99,7 +99,7 @@ class DiscordBot {
     // most likely comes first
     match = REGEXES.CHAT_EVENT.exec(msg)
     if (match) {
-      const cleanedText = match.groups.message.replaceAll(REGEXES.DIRTY_TEXT_REGEX, match => { return '\\' + match })
+      const cleanedText = match.groups.message.replace(REGEXES.DIRTY_TEXT_REGEX, match => { return '\\' + match })
       REGEXES.DIRTY_TEXT_REGEX.lastIndex = 0
 
       await this.channel.send(`**${match.groups.author}**: ${cleanedText}`)
