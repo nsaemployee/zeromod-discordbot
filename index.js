@@ -46,7 +46,19 @@ class DiscordBot {
     this.channel = await this.Bot.channels.fetch(this.config.channel_id)
   }
 
-  onDiscMessage = (msg) => {
+  writeToSP (data) {
+    return new Promise(resolve => {
+      return this.server_process.stdin.write(data, resolve)
+    })
+  }
+
+  writeToStdout (data) {
+    return new Promise(resolve => {
+      return process.stdout.write(data, resolve)
+    })
+  }
+
+  onDiscMessage = async (msg) => {
     if (msg.channel.id !== this.config.channel_id || msg.author.id === this.Bot.user.id) {
       return
     }
@@ -55,15 +67,15 @@ class DiscordBot {
     const lines = msg.cleanContent.split('\n')
     for (const line of lines) {
       const generatedMsg = `s_talkbot_say "" "[${msg.author.username}]:" "${line}"\n`
-      process.stdout.write(generatedMsg)
-      this.server_process.stdin.write(generatedMsg)
+      await this.writeToStdout(generatedMsg)
+      await this.writeToSP(generatedMsg)
     }
 
     for (const it of msg.attachments) {
       const attachment = it[1]
       const generatedMsg = `s_talkbot_say "" "[${msg.author.username}]:" "has uploaded the file ${attachment.name}: ${attachment.url}"\n`
-      process.stdout.write(generatedMsg)
-      this.server_process.stdin.write(generatedMsg)
+      await this.writeToStdout(generatedMsg)
+      await this.writeToSP(generatedMsg)
     }
   }
 
@@ -71,7 +83,7 @@ class DiscordBot {
   // only used during GEOIP_EVENT before NETWORK_EVENT
   GEOIP_MAP = new Map()
   onZMDMessage = async (msg) => {
-    process.stdout.write(msg + '\n')
+    await this.writeToStdout(msg + '\n')
     if (!this.channel) {
       return
       // wait till it logs in
@@ -180,7 +192,7 @@ class DiscordBot {
 
     this.rlInterface.on('line', this.onZMDMessageWrapper)
     process.stdin.on('data', (data) => {
-      this.server_process.stdin.write(data)
+      this.writeToSP(data).catch(e => console.error(e))
     })
 
     process.on('SIGINT', this.goodbye)
