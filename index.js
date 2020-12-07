@@ -80,14 +80,16 @@ class DiscordBot {
       username = '?!?!?'
     }
 
-    let cmdData = ''
+    const cmdData = `s_talkbot_fakesay 0 "${username.replace(/\s/g, '_')}" `
 
     // TODO make it safer?
+    /*
     if (username.indexOf(' ') === -1) {
       cmdData = `s_talkbot_fakesay 0 "${username}" `
     } else {
       cmdData = `s_talkbot_say "" "[${username}]:" `
     }
+    */
 
     for (const line of lines) {
       const generatedMsg = cmdData + '"' + line.replace(REGEXES.SAUER_DIRTY_TEXT_REGEX, this.escapeStr) + '"\n'
