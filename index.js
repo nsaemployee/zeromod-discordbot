@@ -75,8 +75,13 @@ class DiscordBot {
 
     // Translate to s_talkbot_say and get it over with
     const lines = msg.cleanContent.split('\n')
+    let username = _.get(msg, ['member', 'displayName'], false) || msg.author.name
+    if (username) {
+      username = username.replace(REGEXES.SAUER_DIRTY_TEXT_REGEX, this.escapeStr)
+    } else {
+      username = username.toString()
+    }
 
-    const username = (_.get(msg, ['member', 'displayName']) || msg.author.name).replace(REGEXES.SAUER_DIRTY_TEXT_REGEX, this.escapeStr)
     let cmdData = ''
 
     // TODO make it safer?
