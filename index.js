@@ -31,7 +31,7 @@ const REGEXES = {
   KICK_EVENT: /^kick: (?<client1>.+) kicked (?<client2>.+)$/g,
   CHAT_EVENT: /^chat: (?<author>.+): (?<message>.+)$/g,
   // eslint-disable-next-line no-useless-escape
-  DIRTY_TEXT_REGEX: /[.\[\]"'\\]/gi,
+  DIRTY_TEXT_REGEX: /[.\[\]"'\\^]/gi,
   // REMOVE_SLASH_REGEX: /\//gi
   REMOVE_APOSTROPHE_PATTERN: '"',
   REMOVE_APOSTROPHE_REPLACEMENT: '\\"'
