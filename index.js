@@ -77,7 +77,7 @@ class DiscordBot {
     if (username) {
       username = username.replace(REGEXES.SAUER_DIRTY_TEXT_REGEX, this.escapeStr)
     } else {
-      username = username.toString()
+      username = JSON.stringify(username)
     }
 
     let cmdData = ''
