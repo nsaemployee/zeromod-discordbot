@@ -62,8 +62,12 @@ class DiscordBot {
     })
   }
 
-  escapeStr (match) {
-    return ''
+  escapeWithSlash (match) {
+    return '\\' + match
+  }
+
+  escapeWithCircumflex (match) {
+    return '^' + match
   }
 
   onDiscMessage = async (msg) => {
@@ -75,7 +79,7 @@ class DiscordBot {
     const lines = msg.cleanContent.split('\n')
     let username = _.get(msg, ['member', 'displayName'], false) || msg.author.name || msg.author.username
     if (username != null) {
-      username = username.replace(REGEXES.SAUER_DIRTY_TEXT_REGEX, this.escapeStr)
+      username = username.replace(REGEXES.SAUER_DIRTY_TEXT_REGEX, '')
     } else {
       username = '?!?!?'
     }
@@ -92,7 +96,7 @@ class DiscordBot {
     */
 
     for (const line of lines) {
-      const generatedMsg = cmdData + '"' + line.replace(REGEXES.SAUER_DIRTY_TEXT_REGEX, this.escapeStr) + '"\n'
+      const generatedMsg = cmdData + '"' + line.replace(REGEXES.SAUER_DIRTY_TEXT_REGEX, this.escapeWithCircumflex) + '"\n'
       REGEXES.SAUER_DIRTY_TEXT_REGEX.lastIndex = 0
       await this.writeToStdout(generatedMsg)
       await this.writeToSP(generatedMsg)
@@ -120,7 +124,7 @@ class DiscordBot {
     // most likely comes first
     match = REGEXES.CHAT_EVENT.exec(msg)
     if (match) {
-      const cleanedText = match.groups.message.replace(REGEXES.DISCORD_DIRTY_TEXT_REGEX, this.escapeStr)
+      const cleanedText = match.groups.message.replace(REGEXES.DISCORD_DIRTY_TEXT_REGEX, this.escapeWithSlash)
       REGEXES.DISCORD_DIRTY_TEXT_REGEX.lastIndex = 0
 
       await this.channel.send(`**${match.groups.author}**: ${cleanedText}`)
