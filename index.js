@@ -30,6 +30,7 @@ const REGEXES = {
   GEOIP_EVENT: /^geoip: client (?<clientid>\d+) connected from (?<location>.+)$/g,
   KICK_EVENT: /^kick: (?<client1>.+) kicked (?<client2>.+)$/g,
   CHAT_EVENT: /^chat: (?<author>.+): (?<message>.+)$/g,
+  RENAME_EVENT: /^rename: (?<oldname>.+) \((\d+)\) is now known as (?<newname>.+)$/g,
   // eslint-disable-next-line no-useless-escape
   DISCORD_DIRTY_TEXT_REGEX: /[.\[\]"'\\]/gi,
   // REMOVE_SLASH_REGEX: /\//gi
@@ -48,6 +49,15 @@ class DiscordBot {
   onReady = async () => {
     console.log('Bot logged in.')
     this.channel = await this.Bot.channels.fetch(this.config.channel_id)
+
+    const relevantHooks = (await this.channel.fetchWebhooks()).filter(hook => {
+      return hook.name === 'ZMDB_HOOK'
+    })
+    if (relevantHooks.size > 1) {
+      this.webhook = relevantHooks.first()
+    } else {
+      this.webhook = await this.channel.createWebhook('ZMDB_HOOK')
+    }
   }
 
   writeToSP (data) {
@@ -71,7 +81,7 @@ class DiscordBot {
   }
 
   onDiscMessage = async (msg) => {
-    if (msg.channel.id !== this.config.channel_id || msg.author.id === this.Bot.user.id) {
+    if (msg.channel.id !== this.config.channel_id || msg.author.id === this.Bot.user.id || msg.webhookID === this.webhook.id) {
       return
     }
 
@@ -110,6 +120,10 @@ class DiscordBot {
     }
   }
 
+  suffixServerName (uname) {
+    return uname + ' @ ' + this.Bot.user.username
+  }
+
   // ClientID -> location
   // only used during GEOIP_EVENT before NETWORK_EVENT
   GEOIP_MAP = new Map()
@@ -127,7 +141,9 @@ class DiscordBot {
       const cleanedText = match.groups.message.replace(REGEXES.DISCORD_DIRTY_TEXT_REGEX, this.escapeWithSlash)
       REGEXES.DISCORD_DIRTY_TEXT_REGEX.lastIndex = 0
 
-      await this.channel.send(`**${match.groups.author}**: ${cleanedText}`)
+      await this.webhook.send(cleanedText, {
+        username: this.suffixServerName(match.groups.author)
+      })
       REGEXES.CHAT_EVENT.lastIndex = 0
       return
     }
@@ -136,7 +152,9 @@ class DiscordBot {
     match = REGEXES.NETWORK_EVENT.exec(msg)
     if (match) {
       const geoloc = this.GEOIP_MAP.get(match.groups.clientid)
-      await this.channel.send(`**${match.groups.name} (${match.groups.clientid})** ${match.groups.action} ${geoloc ? 'from ' + geoloc : ''}`)
+      await this.webhook.send(`${match.groups.action} ${geoloc ? 'from ' + geoloc : ''}`, {
+        username: this.suffixServerName(`${match.groups.name} (${match.groups.clientid})`)
+      })
       if (geoloc) {
         this.GEOIP_MAP.delete(match.groups.clientid)
       }
@@ -154,15 +172,28 @@ class DiscordBot {
 
     match = REGEXES.MASTER_EVENT.exec(msg)
     if (match) {
-      await this.channel.send(`**${match.groups.name}** has ${match.groups.op} ${match.groups.privilege}`)
+      await this.webhook.send(`has ${match.groups.op} ${match.groups.privilege}`, {
+        username: this.suffixServerName(match.groups.name)
+      })
       REGEXES.MASTER_EVENT.lastIndex = 0
+      return
+    }
+
+    match = REGEXES.RENAME_EVENT.exec(msg)
+    if (match) {
+      await this.webhook.send(`is now known as ${match.groups.newname}`, {
+        username: this.suffixServerName(match.groups.oldname)
+      })
+      REGEXES.RENAME_EVENT.lastIndex = 0
       return
     }
 
     // TODO also cover ban
     match = REGEXES.KICK_EVENT.exec(msg)
     if (match) {
-      await this.channel.send(`**${match.groups.client1}** has kicked **${match.groups.client2}**!`)
+      await this.webhook.send(`has kicked **${match.groups.client2}**!`, {
+        username: this.suffixServerName(match.groups.client1)
+      })
       REGEXES.KICK_EVENT.lastIndex = 0
     }
   }
