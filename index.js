@@ -31,8 +31,8 @@ const REGEXES = {
   KICK_EVENT: /^kick: (?<client1>.+) kicked (?<client2>.+)$/g,
   CHAT_EVENT: /^chat: (?<author>.+): (?<message>.+)$/g,
   RENAME_EVENT: /^rename: (?<oldname>.+) \((\d+)\) is now known as (?<newname>.+)$/g,
-  // eslint-disable-next-line no-useless-escape
-  DISCORD_DIRTY_TEXT_REGEX: /[.\[\]"'\\]/gi,
+  DISCORD_DIRTY_TEXT_REGEX: /[.[\]"'\\]/gi,
+  DISCORD_EXTRA_DIRTY_TEXT_REGEX: /[.[\]"'\\`_]/gi,
   // REMOVE_SLASH_REGEX: /\//gi
   SAUER_DIRTY_TEXT_REGEX: /["^]/gi
 }
@@ -90,6 +90,7 @@ class DiscordBot {
     let username = _.get(msg, ['member', 'displayName'], false) || msg.author.name || msg.author.username
     if (username != null) {
       username = username.replace(REGEXES.SAUER_DIRTY_TEXT_REGEX, '')
+      REGEXES.SAUER_DIRTY_TEXT_REGEX.lastIndex = 0
     } else {
       username = '?!?!?'
     }
@@ -181,9 +182,10 @@ class DiscordBot {
 
     match = REGEXES.RENAME_EVENT.exec(msg)
     if (match) {
-      await this.webhook.send(`is now known as ${match.groups.newname}`, {
+      await this.webhook.send(`is now known as ${match.groups.newname.replace(REGEXES.DISCORD_EXTRA_DIRTY_TEXT_REGEX, this.escapeWithSlash)}`, {
         username: this.suffixServerName(match.groups.oldname)
       })
+      REGEXES.DISCORD_EXTRA_DIRTY_TEXT_REGEX.lastIndex = 0
       REGEXES.RENAME_EVENT.lastIndex = 0
       return
     }
