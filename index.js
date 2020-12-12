@@ -125,6 +125,17 @@ class DiscordBot {
     return uname + ' @ ' + this.Bot.user.username
   }
 
+  generateWebhookOptions ({
+    username,
+    t,
+    p
+  }) {
+    return {
+      username: this.suffixServerName(username),
+      avatarURL: 'https://cdn.discordapp.com/attachments/708570880719978537/787394259803308032/unknown.png'
+    }
+  }
+
   // ClientID -> location
   // only used during GEOIP_EVENT before NETWORK_EVENT
   GEOIP_MAP = new Map()
@@ -142,9 +153,9 @@ class DiscordBot {
       const cleanedText = match.groups.message.replace(REGEXES.DISCORD_DIRTY_TEXT_REGEX, this.escapeWithSlash)
       REGEXES.DISCORD_DIRTY_TEXT_REGEX.lastIndex = 0
 
-      await this.webhook.send(cleanedText, {
-        username: this.suffixServerName(match.groups.author)
-      })
+      await this.webhook.send(cleanedText, this.generateWebhookOptions({
+        username: match.groups.author
+      }))
       REGEXES.CHAT_EVENT.lastIndex = 0
       return
     }
@@ -153,9 +164,9 @@ class DiscordBot {
     match = REGEXES.NETWORK_EVENT.exec(msg)
     if (match) {
       const geoloc = this.GEOIP_MAP.get(match.groups.clientid)
-      await this.webhook.send(`${match.groups.action} ${geoloc ? 'from ' + geoloc : ''}`, {
-        username: this.suffixServerName(`${match.groups.name} (${match.groups.clientid})`)
-      })
+      await this.webhook.send(`${match.groups.action} ${geoloc ? 'from ' + geoloc : ''}`, this.generateWebhookOptions({
+        username: `${match.groups.name} (${match.groups.clientid})`
+      }))
       if (geoloc) {
         this.GEOIP_MAP.delete(match.groups.clientid)
       }
@@ -173,18 +184,18 @@ class DiscordBot {
 
     match = REGEXES.MASTER_EVENT.exec(msg)
     if (match) {
-      await this.webhook.send(`has ${match.groups.op} ${match.groups.privilege}`, {
-        username: this.suffixServerName(match.groups.name)
-      })
+      await this.webhook.send(`has ${match.groups.op} ${match.groups.privilege}`, this.generateWebhookOptions({
+        username: match.groups.name
+      }))
       REGEXES.MASTER_EVENT.lastIndex = 0
       return
     }
 
     match = REGEXES.RENAME_EVENT.exec(msg)
     if (match) {
-      await this.webhook.send(`is now known as ${match.groups.newname.replace(REGEXES.DISCORD_EXTRA_DIRTY_TEXT_REGEX, this.escapeWithSlash)}`, {
-        username: this.suffixServerName(match.groups.oldname)
-      })
+      await this.webhook.send(`is now known as ${match.groups.newname.replace(REGEXES.DISCORD_EXTRA_DIRTY_TEXT_REGEX, this.escapeWithSlash)}`, this.generateWebhookOptions({
+        username: match.groups.oldname
+      }))
       REGEXES.DISCORD_EXTRA_DIRTY_TEXT_REGEX.lastIndex = 0
       REGEXES.RENAME_EVENT.lastIndex = 0
       return
@@ -193,9 +204,9 @@ class DiscordBot {
     // TODO also cover ban
     match = REGEXES.KICK_EVENT.exec(msg)
     if (match) {
-      await this.webhook.send(`has kicked **${match.groups.client2}**!`, {
-        username: this.suffixServerName(match.groups.client1)
-      })
+      await this.webhook.send(`has kicked **${match.groups.client2}**!`, this.generateWebhookOptions({
+        username: match.groups.client1
+      }))
       REGEXES.KICK_EVENT.lastIndex = 0
     }
   }
