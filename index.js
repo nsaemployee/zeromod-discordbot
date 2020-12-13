@@ -39,7 +39,7 @@ const REGEXES = {
 
 /* eslint no-extend-native: ["error", { "exceptions": ["RegExp"] }] */
 RegExp.prototype.execAndClear = function (input) {
-  const resp = this.execAndClear(input)
+  const resp = this.exec(input)
   this.lastIndex = 0
   return resp
 }
