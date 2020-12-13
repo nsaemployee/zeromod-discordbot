@@ -105,7 +105,6 @@ class DiscordBot {
 
     for (const line of lines) {
       const generatedMsg = cmdData + '"' + line.replace(REGEXES.SAUER_DIRTY_TEXT_REGEX, this.escapeWithCircumflex) + '"\n'
-      REGEXES.SAUER_DIRTY_TEXT_REGEX.lastIndex = 0
       await this.writeToStdout(generatedMsg)
       await this.writeToSP(generatedMsg)
     }
@@ -235,7 +234,7 @@ class DiscordBot {
     })
 
     process.on('SIGINT', this.goodbye)
-    process.on('SIGTERM', this.goodbye
+    process.on('SIGTERM', this.goodbye)
   }
 }
 
