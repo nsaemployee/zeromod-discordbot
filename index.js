@@ -28,8 +28,8 @@ const REGEXES = {
   NETWORK_EVENT: /^(?<op>connect|disconnect): (?<name>[^ ]+) \((?<clientid>\d+)\) (?<action>left|joined)$/g,
   MASTER_EVENT: /^master: (?<name>.+) (?<op>claimed|relinquished) (?<privilege>.+)$/g,
   GEOIP_EVENT: /^geoip: client (?<clientid>\d+) connected from (?<location>.+)$/g,
-  KICK_EVENT: /^kick: (?<client1>[^ ]+) kicked (?<client2>[^ ]+)$/g,
-  CHAT_EVENT: /^chat: (?<author>[^ ]+): (?<message>.+)$/g,
+  KICK_EVENT: /^kick: (?<client1>.+) kicked (?<client2>.+)$/g,
+  CHAT_EVENT: /^chat: (?<author>.+): (?<message>.+)$/g,
   // eslint-disable-next-line no-useless-escape
   DISCORD_DIRTY_TEXT_REGEX: /[.\[\]"'\\]/gi,
   DISCORD_PURE_TEXT_REGEX: /[\u0021-\u002f\u005b-\u0060\u007b-\u007e]/gi,
