@@ -180,13 +180,11 @@ class DiscordBot {
       return
     }
 
-    match = REGEXES.RENAME_EVENT.exec(msg)
+    match = REGEXES.RENAME_EVENT.execAndClear(msg)
     if (match) {
       await this.webhook.send(`is now known as ${match.groups.newname.replace(REGEXES.DISCORD_EXTRA_DIRTY_TEXT_REGEX, this.escapeWithSlash)}`, {
         username: this.suffixServerName(match.groups.oldname)
       })
-      REGEXES.DISCORD_EXTRA_DIRTY_TEXT_REGEX.lastIndex = 0
-      REGEXES.RENAME_EVENT.lastIndex = 0
       return
     }
 
