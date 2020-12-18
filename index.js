@@ -25,16 +25,24 @@ const cp = require('child_process')
 const rl = require('readline')
 
 const REGEXES = {
-  NETWORK_EVENT: /^(?<op>connect|disconnect): (?<name>.+) \((?<clientid>\d+)\) (?<action>left|joined)$/g,
+  NETWORK_EVENT: /^(?<op>connect|disconnect): (?<name>[^ ]+) \((?<clientid>\d+)\) (?<action>left|joined)$/g,
   MASTER_EVENT: /^master: (?<name>.+) (?<op>claimed|relinquished) (?<privilege>.+)$/g,
   GEOIP_EVENT: /^geoip: client (?<clientid>\d+) connected from (?<location>.+)$/g,
   KICK_EVENT: /^kick: (?<client1>.+) kicked (?<client2>.+)$/g,
   CHAT_EVENT: /^chat: (?<author>.+): (?<message>.+)$/g,
   RENAME_EVENT: /^rename: (?<oldname>.+) \((\d+)\) is now known as (?<newname>.+)$/g,
-  DISCORD_DIRTY_TEXT_REGEX: /[.[\]"'\\]/gi,
-  DISCORD_EXTRA_DIRTY_TEXT_REGEX: /[.[\]"'\\`_]/gi,
+  // eslint-disable-next-line no-useless-escape
+  DISCORD_DIRTY_TEXT_REGEX: /[.\[\]"'\\]/gi,
+  DISCORD_PURE_TEXT_REGEX: /[\u0021-\u002f\u005b-\u0060\u007b-\u007e]/gi,
   // REMOVE_SLASH_REGEX: /\//gi
   SAUER_DIRTY_TEXT_REGEX: /["^]/gi
+}
+
+/* eslint no-extend-native: ["error", { "exceptions": ["RegExp"] }] */
+RegExp.prototype.execAndClear = function (input) {
+  const resp = this.exec(input)
+  this.lastIndex = 0
+  return resp
 }
 
 class DiscordBot {
@@ -85,12 +93,11 @@ class DiscordBot {
       return
     }
 
-    // Translate to s_talkbot_say and get it over with
+    // Translate to s_talkbot_fakesay and get it over with
     const lines = msg.cleanContent.split('\n')
     let username = _.get(msg, ['member', 'displayName'], false) || msg.author.name || msg.author.username
     if (username != null) {
-      username = username.replace(REGEXES.SAUER_DIRTY_TEXT_REGEX, '')
-      REGEXES.SAUER_DIRTY_TEXT_REGEX.lastIndex = 0
+      username = username.replace(REGEXES.SAUER_DIRTY_TEXT_REGEX, this.escapeWithCircumflex)
     } else {
       username = '?!?!?'
     }
@@ -108,7 +115,6 @@ class DiscordBot {
 
     for (const line of lines) {
       const generatedMsg = cmdData + '"' + line.replace(REGEXES.SAUER_DIRTY_TEXT_REGEX, this.escapeWithCircumflex) + '"\n'
-      REGEXES.SAUER_DIRTY_TEXT_REGEX.lastIndex = 0
       await this.writeToStdout(generatedMsg)
       await this.writeToSP(generatedMsg)
     }
@@ -148,20 +154,17 @@ class DiscordBot {
     let match
 
     // most likely comes first
-    match = REGEXES.CHAT_EVENT.exec(msg)
+    match = REGEXES.CHAT_EVENT.execAndClear(msg)
     if (match) {
       const cleanedText = match.groups.message.replace(REGEXES.DISCORD_DIRTY_TEXT_REGEX, this.escapeWithSlash)
-      REGEXES.DISCORD_DIRTY_TEXT_REGEX.lastIndex = 0
-
-      await this.webhook.send(cleanedText, this.generateWebhookOptions({
+        await this.webhook.send(cleanedText, this.generateWebhookOptions({
         username: match.groups.author
       }))
-      REGEXES.CHAT_EVENT.lastIndex = 0
       return
     }
 
     // requires special handling
-    match = REGEXES.NETWORK_EVENT.exec(msg)
+    match = REGEXES.NETWORK_EVENT.execAndClear(msg)
     if (match) {
       const geoloc = this.GEOIP_MAP.get(match.groups.clientid)
       await this.webhook.send(`${match.groups.action} ${geoloc ? 'from ' + geoloc : ''}`, this.generateWebhookOptions({
@@ -170,44 +173,38 @@ class DiscordBot {
       if (geoloc) {
         this.GEOIP_MAP.delete(match.groups.clientid)
       }
-      REGEXES.NETWORK_EVENT.lastIndex = 0
       return
     }
 
     // also requires special handling
-    match = REGEXES.GEOIP_EVENT.exec(msg)
+    match = REGEXES.GEOIP_EVENT.execAndClear(msg)
     if (match) {
       this.GEOIP_MAP.set(match.groups.clientid, match.groups.location)
-      REGEXES.GEOIP_EVENT.lastIndex = 0
       return
     }
 
-    match = REGEXES.MASTER_EVENT.exec(msg)
+    match = REGEXES.MASTER_EVENT.execAndClear(msg)
     if (match) {
       await this.webhook.send(`has ${match.groups.op} ${match.groups.privilege}`, this.generateWebhookOptions({
         username: match.groups.name
       }))
-      REGEXES.MASTER_EVENT.lastIndex = 0
       return
     }
 
-    match = REGEXES.RENAME_EVENT.exec(msg)
+    match = REGEXES.RENAME_EVENT.execAndClear(msg)
     if (match) {
       await this.webhook.send(`is now known as ${match.groups.newname.replace(REGEXES.DISCORD_EXTRA_DIRTY_TEXT_REGEX, this.escapeWithSlash)}`, this.generateWebhookOptions({
         username: match.groups.oldname
       }))
-      REGEXES.DISCORD_EXTRA_DIRTY_TEXT_REGEX.lastIndex = 0
-      REGEXES.RENAME_EVENT.lastIndex = 0
       return
     }
 
     // TODO also cover ban
-    match = REGEXES.KICK_EVENT.exec(msg)
+    match = REGEXES.KICK_EVENT.execAndClear(msg)
     if (match) {
       await this.webhook.send(`has kicked **${match.groups.client2}**!`, this.generateWebhookOptions({
         username: match.groups.client1
       }))
-      REGEXES.KICK_EVENT.lastIndex = 0
     }
   }
 
@@ -249,6 +246,10 @@ class DiscordBot {
     if (!_.isString(this.config.channel_id)) {
       console.error('Channel ID not specified in config, exiting.')
       process.exit(3)
+    }
+
+    if (this.config.escape_all_sauer_input) {
+      REGEXES.DISCORD_DIRTY_TEXT_REGEX = REGEXES.DISCORD_PURE_TEXT_REGEX
     }
 
     this.Bot = new Discord.Client()
