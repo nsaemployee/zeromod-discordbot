@@ -19,10 +19,6 @@ yarn install
 node index.js
 ```
 
-You can also use `npm` in place of `yarn` if you don't want to install `yarn` like:
-
-`npm install`
-
 ## TODO
 
 1. Webhook integration in the near future
