@@ -29,7 +29,7 @@ const REGEXES = {
   MASTER_EVENT: /^master: (?<name>.+) (?<op>claimed|relinquished) (?<privilege>.+)$/g,
   GEOIP_EVENT: /^geoip: client (?<clientid>\d+) connected from (?<location>.+)$/g,
   KICK_EVENT: /^kick: (?<client1>.+) kicked (?<client2>.+)$/g,
-  CHAT_EVENT: /^chat: (?<author>[^ ]+): (?<message>.+)$/g,
+  CHAT_EVENT: /^chat: (?<author>[^ ]+? \(\d+\)): (?<message>.+)$/g,
   RENAME_EVENT: /^rename: (?<oldname>.+) \((\d+)\) is now known as (?<newname>.+)$/g,
   // eslint-disable-next-line no-useless-escape
   DISCORD_DIRTY_TEXT_REGEX: /[.\[\]"'\\]/gi,
