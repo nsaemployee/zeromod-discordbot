@@ -9,8 +9,8 @@
     "dev": "node --inspect=localhost:9219 index.js"
   },
   "dependencies": {
-    "discord.js": "^12.5.1",
     "fs-jetpack": "^4.1.0",
+    "irc-framework": "^4.11.0",
     "lodash": "^4.17.20",
     "toml": "^3.0.0"
   },

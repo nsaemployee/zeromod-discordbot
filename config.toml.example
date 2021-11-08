@@ -1,5 +1,9 @@
-channel_id = '<The Main Channel where everything should go>'
-discord_token = '<Your Discord Token>'
-
+channel = '<The Main Channel where everything should go>'
 server_executable = '<**ABSOLUTE PATH TO YOUR ZEROMOD EXECUTABLE**>'
 server_cwd = '<**ZEROMOD WORKING DIRECTORY**>'
+
+[irc]
+host = 'irc.irc.net'
+port = 6697
+tls = true
+nick = 'MyBot'

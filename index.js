@@ -17,20 +17,22 @@
 */
 
 const _ = require('lodash')
-const Discord = require('discord.js')
 const fs = require('fs-jetpack')
 const toml = require('toml')
+const IRC = require('irc-framework')
 
 const cp = require('child_process')
 const rl = require('readline')
 
 const REGEXES = {
-  NETWORK_EVENT: /^(?<op>connect|disconnect): (?<name>[^ ]+) \((?<clientid>\d+)\) (?<action>left|joined)$/g,
+  IRC_NICK: /(?<ircnick>[a-zA-Z\[\]\\`_\^\{\|\}][a-zA-Z0-9\[\]\\`_\^\{\|\}-]{1,31})/gi,
+  CONNECT_EVENT: /^connect: (?<name>[^ ]+) \((?<clientid>\d+)\) joined$/g,
+  DISCONNECT_EVENT: /^disconnect: (?<name>[^ ]+) \((?<clientid>\d+)\) left$/g,
   MASTER_EVENT: /^master: (?<name>.+) (?<op>claimed|relinquished) (?<privilege>.+)$/g,
   GEOIP_EVENT: /^geoip: client (?<clientid>\d+) connected from (?<location>.+)$/g,
   KICK_EVENT: /^kick: (?<client1>.+) kicked (?<client2>.+)$/g,
-  CHAT_EVENT: /^chat: (?<author>[^ ]+? \(\d+\)): (?<message>.+)$/g,
-  RENAME_EVENT: /^rename: (?<oldname>.+) \((\d+)\) is now known as (?<newname>.+)$/g,
+  CHAT_EVENT: /^chat: (?<author>[^ ]+?) \((?<clientid>\d+)\): (?<message>.+)$/g,
+  RENAME_EVENT: /^rename: (?<oldname>.+) \((?<clientid>\d+)\) is now known as (?<newname>.+)$/g,
   // eslint-disable-next-line no-useless-escape
   DISCORD_DIRTY_TEXT_REGEX: /[.\[\]"'\\]/gi,
   DISCORD_PURE_TEXT_REGEX: /[\u0021-\u002f\u005b-\u0060\u007b-\u007e]/gi,
@@ -54,18 +56,9 @@ class DiscordBot {
     this.config = toml.parse(await fs.readAsync(process.env.ZMDB_CONFIG || 'config.toml'))
   }
 
-  onReady = async () => {
-    console.log('Bot logged in.')
-    this.channel = await this.Bot.channels.fetch(this.config.channel_id)
-
-    const relevantHooks = (await this.channel.fetchWebhooks()).filter(hook => {
-      return hook.name === 'ZMDB_HOOK'
-    })
-    if (relevantHooks.size > 1) {
-      this.webhook = relevantHooks.first()
-    } else {
-      this.webhook = await this.channel.createWebhook('ZMDB_HOOK')
-    }
+  onIRCRegister = async () => {
+    this.Bot.join(this.config.channel)
+    this.masterChannel = this.Bot.channel(this.config.channel)
   }
 
   writeToSP (data) {
@@ -88,14 +81,14 @@ class DiscordBot {
     return '^' + match
   }
 
-  onDiscMessage = async (msg) => {
-    if (msg.channel.id !== this.config.channel_id || msg.author.id === this.Bot.user.id || msg.webhookID === this.webhook.id) {
+  ircInstances = new Map()
+  ownedNicks = new Set()
+  onIRCMessage = async (msg) => {
+    if (msg.target !== this.config.channel || msg.nick === this.Bot.user.nick || this.ownedNicks.has(msg.nick)) {
       return
     }
 
-    // Translate to s_talkbot_fakesay and get it over with
-    const lines = msg.cleanContent.split('\n')
-    let username = _.get(msg, ['member', 'displayName'], false) || msg.author.name || msg.author.username
+    let username = msg.nick
     if (username != null) {
       username = username.replace(REGEXES.SAUER_DIRTY_TEXT_REGEX, this.escapeWithCircumflex)
     } else {
@@ -112,19 +105,10 @@ class DiscordBot {
       cmdData = `s_talkbot_say "" "[${username}]:" `
     }
     */
-
-    for (const line of lines) {
-      const generatedMsg = cmdData + '"' + line.replace(REGEXES.SAUER_DIRTY_TEXT_REGEX, this.escapeWithCircumflex) + '"\n'
-      await this.writeToStdout(generatedMsg)
-      await this.writeToSP(generatedMsg)
-    }
-
-    for (const it of msg.attachments) {
-      const attachment = it[1]
-      const generatedMsg = cmdData + `"has uploaded the file ${attachment.name}: ${attachment.url}"\n`
-      await this.writeToStdout(generatedMsg)
-      await this.writeToSP(generatedMsg)
-    }
+    // Translate to s_talkbot_fakesay and get it over with
+    const generatedMsg = cmdData + '"' + msg.message.replace(REGEXES.SAUER_DIRTY_TEXT_REGEX, this.escapeWithCircumflex) + '"\n'
+    await this.writeToStdout(generatedMsg)
+    await this.writeToSP(generatedMsg)
   }
 
   suffixServerName (uname) {
@@ -136,7 +120,7 @@ class DiscordBot {
   GEOIP_MAP = new Map()
   onZMDMessage = async (msg) => {
     await this.writeToStdout(msg + '\n')
-    if (!this.channel) {
+    if (!this.masterChannel) {
       return
       // wait till it logs in
     }
@@ -145,24 +129,53 @@ class DiscordBot {
     // most likely comes first
     match = REGEXES.CHAT_EVENT.execAndClear(msg)
     if (match) {
-      const cleanedText = match.groups.message.replace(REGEXES.DISCORD_DIRTY_TEXT_REGEX, this.escapeWithSlash)
-      await this.webhook.send(cleanedText, {
-        username: this.suffixServerName(match.groups.author)
-      })
+      const instance = this.ircInstances.get(match.groups.clientid)
+      // probably connecting
+      if (!instance) {
+        return
+      }
+      instance._channel.say(match.groups.message)
       return
     }
 
     // requires special handling
-    match = REGEXES.NETWORK_EVENT.execAndClear(msg)
+    match = REGEXES.CONNECT_EVENT.execAndClear(msg)
     if (match) {
       const geoloc = this.GEOIP_MAP.get(match.groups.clientid)
-      await this.webhook.send(`${match.groups.action} ${geoloc ? 'from ' + geoloc : ''}`, {
-        username: this.suffixServerName(`${match.groups.name} (${match.groups.clientid})`)
+      const userInstance = new IRC.Client()
+      const channel = userInstance.channel(this.config.channel)
+      const nickMatch = REGEXES.IRC_NICK.execAndClear(match.groups.name)
+      userInstance._channel = channel
+
+      userInstance.on('registered', () => {
+        userInstance.join(this.config.channel)
       })
       if (geoloc) {
+        userInstance.on('join', () => {
+          channel.say('Connected from: ' + geoloc)
+        })
         this.GEOIP_MAP.delete(match.groups.clientid)
       }
+
+      await userInstance.connect({
+        ...this.config.irc,
+        nick: nickMatch.groups.ircnick
+      })
+      userInstance.on('nick in use', (ev) => {
+        userInstance.changeNick(ev.nick + '_')
+      })
+
+      this.ircInstances.set(match.groups.clientid, userInstance)
+      this.ownedNicks.add(nickMatch.groups.ircnick)
       return
+    }
+
+    match = REGEXES.DISCONNECT_EVENT.execAndClear(msg)
+    if (match) {
+      const { clientid } = match.groups
+      const instance = this.ircInstances.get(clientid)
+      this.ownedNicks.delete(instance.user.nick)
+      instance.connection.end(null, false)
     }
 
     // also requires special handling
@@ -174,26 +187,21 @@ class DiscordBot {
 
     match = REGEXES.MASTER_EVENT.execAndClear(msg)
     if (match) {
-      await this.webhook.send(`has ${match.groups.op} ${match.groups.privilege}`, {
-        username: this.suffixServerName(match.groups.name)
-      })
+      this.masterChannel.say(`${match.groups.name} has ${match.groups.op} ${match.groups.privilege}!`)
       return
     }
 
     match = REGEXES.RENAME_EVENT.execAndClear(msg)
     if (match) {
-      await this.webhook.send(`is now known as ${match.groups.newname.replace(REGEXES.DISCORD_EXTRA_DIRTY_TEXT_REGEX, this.escapeWithSlash)}`, {
-        username: this.suffixServerName(match.groups.oldname)
-      })
+      const instance = this.ircInstances.get(match.groups.clientid)
+      instance.changeNick(match.groups.newname)
       return
     }
 
     // TODO also cover ban
     match = REGEXES.KICK_EVENT.execAndClear(msg)
     if (match) {
-      await this.webhook.send(`has kicked **${match.groups.client2}**!`, {
-        username: this.suffixServerName(match.groups.client1)
-      })
+      this.masterChannel.say(`${match.groups.client1} has kicked ${match.groups.client2}!`)
     }
   }
 
@@ -213,17 +221,16 @@ class DiscordBot {
     // 3s deadline before SIGKILL is sent
     setTimeout(() => this.server_process.kill('SIGKILL'), 3000)
     this.server_process.on('exit', () => {
-      this.Bot.destroy()
+      for (const instance of this.ircInstances.values()) {
+        instance.connection.end(null, false)
+      }
+      this.Bot.connection.end(null, false)
       process.exit(0)
     })
   }
 
   async main () {
     await this.loadConfig()
-    if (!_.isString(this.config.discord_token)) {
-      console.error('No discord token found in the config, exiting.')
-      process.exit(1)
-    }
 
     const isServerArgsInvalid = !_.isUndefined(this.config.server_args) ? !_.isArray(this.config.server_args) : false
     if (!_.isString(this.config.server_executable) || isServerArgsInvalid) {
@@ -232,7 +239,7 @@ class DiscordBot {
       process.exit(2)
     }
 
-    if (!_.isString(this.config.channel_id)) {
+    if (!_.isString(this.config.channel)) {
       console.error('Channel ID not specified in config, exiting.')
       process.exit(3)
     }
@@ -241,10 +248,13 @@ class DiscordBot {
       REGEXES.DISCORD_DIRTY_TEXT_REGEX = REGEXES.DISCORD_PURE_TEXT_REGEX
     }
 
-    this.Bot = new Discord.Client()
-    this.Bot.on('ready', this.onReady)
-    this.Bot.on('message', this.onDiscMessage)
-    await this.Bot.login(this.config.discord_token)
+    this.Bot = new IRC.Client()
+    this.Bot.on('registered', this.onIRCRegister)
+    this.Bot.on('privmsg', this.onIRCMessage)
+    this.Bot.on('nick in use', (ev) => {
+      this.Bot.changeNick(ev.nick + '_')
+    })
+    await this.Bot.connect(this.config.irc)
 
     // Open the server as a subprocess
     this.server_process = cp.spawn(this.config.server_executable, this.config.server_args, {
