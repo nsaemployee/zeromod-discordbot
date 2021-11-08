@@ -197,7 +197,9 @@ class DiscordBot {
     match = REGEXES.RENAME_EVENT.execAndClear(msg)
     if (match) {
       const instance = this.ircInstances.get(match.groups.clientid)
+      this.ownedNicks.delete(instance.user.nick)
       instance.changeNick(match.groups.newname)
+      this.ownedNicks.add(match.groups.newname)
       return
     }
 
