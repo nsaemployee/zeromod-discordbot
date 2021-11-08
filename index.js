@@ -162,7 +162,10 @@ class DiscordBot {
         nick: nickMatch.groups.ircnick
       })
       userInstance.on('nick in use', (ev) => {
-        userInstance.changeNick(ev.nick + '_')
+        const nextNick = ev.nick + '_'
+        this.ownedNicks.delete(ev.nick)
+        userInstance.changeNick(nextNick)
+        this.ownedNicks.add(ev.nick)
       })
 
       this.ircInstances.set(match.groups.clientid, userInstance)
