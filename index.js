@@ -151,7 +151,10 @@ class DiscordBot {
         userInstance.join(this.config.channel)
       })
       if (geoloc) {
-        userInstance.on('join', () => {
+        userInstance.on('join', (e) => {
+          if (e.nick !== userInstance.user.nick) {
+            return
+          }
           channel.say('Connected from: ' + geoloc)
         })
         this.GEOIP_MAP.delete(match.groups.clientid)
