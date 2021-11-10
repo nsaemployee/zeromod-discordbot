@@ -20,6 +20,7 @@ const _ = require('lodash')
 const fs = require('fs-jetpack')
 const toml = require('toml')
 const IRC = require('irc-framework')
+const fastq = require('fastq')
 
 const cp = require('child_process')
 const rl = require('readline')
@@ -47,11 +48,18 @@ RegExp.prototype.execAndClear = function (input) {
   return resp
 }
 
-class DiscordBot {
-  constructor () {
-    this.config = {}
-  }
+const JOB_TYPES = {
+  CHAT: 1,
+  CONNECT: 2,
+  DISCONNECT: 3,
+  GEOIP: 4,
+  MASTER: 5,
+  RENAME: 6,
+  KICK: 7
+}
 
+class DiscordBot {
+  config = {}
   async loadConfig () {
     this.config = toml.parse(await fs.readAsync(process.env.ZMDB_CONFIG || 'config.toml'))
   }
@@ -83,6 +91,85 @@ class DiscordBot {
 
   ircInstances = new Map()
   ownedNicks = new Set()
+  onIRCQueueJob = async ({ type, match }) => {
+    switch (type) {
+      case JOB_TYPES.CHAT: {
+        const instance = this.ircInstances.get(match.groups.clientid)
+        // probably connecting
+        if (!instance) {
+          return
+        }
+        instance._channel.say(match.groups.message)
+        break
+      }
+      case JOB_TYPES.CONNECT: {
+        const geoloc = this.GEOIP_MAP.get(match.groups.clientid)
+        const userInstance = new IRC.Client()
+        const channel = userInstance.channel(this.config.channel)
+        const nickMatch = REGEXES.IRC_NICK.execAndClear(match.groups.name)
+        userInstance._channel = channel
+
+        userInstance.on('registered', () => {
+          userInstance.join(this.config.channel)
+        })
+        if (geoloc) {
+          userInstance.on('join', (e) => {
+            if (e.nick !== userInstance.user.nick) {
+              return
+            }
+            channel.say('Connected from: ' + geoloc)
+          })
+          this.GEOIP_MAP.delete(match.groups.clientid)
+        }
+
+        await userInstance.connect({
+          ...this.config.irc,
+          nick: nickMatch.groups.ircnick
+        })
+        userInstance.on('nick in use', (ev) => {
+          this.queue.push({
+            type: JOB_TYPES.RENAME,
+            match: {
+              groups: {
+                clientid: match.groups.clientid,
+                newname: ev.nick + '_'
+              }
+            }
+          })
+        })
+
+        this.ircInstances.set(match.groups.clientid, userInstance)
+        this.ownedNicks.add(nickMatch.groups.ircnick)
+        break
+      }
+      case JOB_TYPES.DISCONNECT: {
+        const { clientid } = match.groups
+        const instance = this.ircInstances.get(clientid)
+        this.ownedNicks.delete(instance.user.nick)
+        instance.connection.end(null, false)
+        break
+      }
+      case JOB_TYPES.GEOIP:
+        this.GEOIP_MAP.set(match.groups.clientid, match.groups.location)
+        break
+      case JOB_TYPES.MASTER:
+        this.masterChannel.say(`${match.groups.name} has ${match.groups.op} ${match.groups.privilege}!`)
+        break
+      case JOB_TYPES.RENAME: {
+        const instance = this.ircInstances.get(match.groups.clientid)
+        this.ownedNicks.delete(instance.user.nick)
+        instance.changeNick(match.groups.newname)
+        this.ownedNicks.add(match.groups.newname)
+        break
+      }
+      case JOB_TYPES.KICK:
+        this.masterChannel.say(`${match.groups.client1} has kicked ${match.groups.client2}!`)
+        break
+    }
+  }
+
+  queue = fastq.promise(this.onIRCQueueJob, 1)
+
   onIRCMessage = async (msg) => {
     if (msg.target !== this.config.channel || msg.nick === this.Bot.user.nick || this.ownedNicks.has(msg.nick)) {
       return
@@ -111,10 +198,6 @@ class DiscordBot {
     await this.writeToSP(generatedMsg)
   }
 
-  suffixServerName (uname) {
-    return uname + ' @ ' + this.Bot.user.username
-  }
-
   // ClientID -> location
   // only used during GEOIP_EVENT before NETWORK_EVENT
   GEOIP_MAP = new Map()
@@ -129,87 +212,67 @@ class DiscordBot {
     // most likely comes first
     match = REGEXES.CHAT_EVENT.execAndClear(msg)
     if (match) {
-      const instance = this.ircInstances.get(match.groups.clientid)
-      // probably connecting
-      if (!instance) {
-        return
-      }
-      instance._channel.say(match.groups.message)
+      await this.queue.push({
+        type: JOB_TYPES.CHAT,
+        match
+      })
       return
     }
 
     // requires special handling
     match = REGEXES.CONNECT_EVENT.execAndClear(msg)
     if (match) {
-      const geoloc = this.GEOIP_MAP.get(match.groups.clientid)
-      const userInstance = new IRC.Client()
-      const channel = userInstance.channel(this.config.channel)
-      const nickMatch = REGEXES.IRC_NICK.execAndClear(match.groups.name)
-      userInstance._channel = channel
-
-      userInstance.on('registered', () => {
-        userInstance.join(this.config.channel)
+      await this.queue.push({
+        type: JOB_TYPES.CONNECT,
+        match
       })
-      if (geoloc) {
-        userInstance.on('join', (e) => {
-          if (e.nick !== userInstance.user.nick) {
-            return
-          }
-          channel.say('Connected from: ' + geoloc)
-        })
-        this.GEOIP_MAP.delete(match.groups.clientid)
-      }
-
-      await userInstance.connect({
-        ...this.config.irc,
-        nick: nickMatch.groups.ircnick
-      })
-      userInstance.on('nick in use', (ev) => {
-        const nextNick = ev.nick + '_'
-        this.ownedNicks.delete(ev.nick)
-        userInstance.changeNick(nextNick)
-        this.ownedNicks.add(ev.nick)
-      })
-
-      this.ircInstances.set(match.groups.clientid, userInstance)
-      this.ownedNicks.add(nickMatch.groups.ircnick)
       return
     }
 
     match = REGEXES.DISCONNECT_EVENT.execAndClear(msg)
     if (match) {
-      const { clientid } = match.groups
-      const instance = this.ircInstances.get(clientid)
-      this.ownedNicks.delete(instance.user.nick)
-      instance.connection.end(null, false)
+      await this.queue.push({
+        type: JOB_TYPES.DISCONNECT,
+        match
+      })
     }
 
     // also requires special handling
     match = REGEXES.GEOIP_EVENT.execAndClear(msg)
     if (match) {
-      this.GEOIP_MAP.set(match.groups.clientid, match.groups.location)
+      // Don't need to necessarily synchronize this
+      await this.queue.push({
+        type: JOB_TYPES.GEOIP,
+        match
+      })
       return
     }
 
     match = REGEXES.MASTER_EVENT.execAndClear(msg)
     if (match) {
-      this.masterChannel.say(`${match.groups.name} has ${match.groups.op} ${match.groups.privilege}!`)
+      await this.queue.push({
+        type: JOB_TYPES.MASTER,
+        match
+      })
       return
     }
 
     match = REGEXES.RENAME_EVENT.execAndClear(msg)
     if (match) {
-      const instance = this.ircInstances.get(match.groups.clientid)
-      this.ownedNicks.delete(instance.user.nick)
-      instance.changeNick(match.groups.newname)
-      this.ownedNicks.add(match.groups.newname)
+      await this.queue.push({
+        type: JOB_TYPES.RENAME,
+        match
+      })
       return
     }
 
     // TODO also cover ban
     match = REGEXES.KICK_EVENT.execAndClear(msg)
     if (match) {
-      this.masterChannel.say(`${match.groups.client1} has kicked ${match.groups.client2}!`)
+      await this.queue.push({
+        type: JOB_TYPES.KICK,
+        match
+      })
     }
   }
 

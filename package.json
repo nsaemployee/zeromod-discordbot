@@ -9,6 +9,7 @@
     "dev": "nodemon -- --inspect=localhost:9219 index.js"
   },
   "dependencies": {
+    "fastq": "^1.13.0",
     "fs-jetpack": "^4.1.0",
     "irc-framework": "^4.11.0",
     "lodash": "^4.17.20",
